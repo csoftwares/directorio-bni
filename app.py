@@ -1,29 +1,35 @@
 import streamlit as st
-from streamlit_gsheets import GSheetsConnection
 import pandas as pd
+import gspread
 
 st.set_page_config(page_title="Directorio BNI", page_icon="📇", layout="centered")
 
 st.title("📇 Directorio BNI")
 
-# URL de tu Google Sheet limpia y corregida
 SHEET_URL = "https://docs.google.com/spreadsheets/d/15SjZZq4urwMP8eH8q44JnjyVNRKR_DThF0bN9FWHs1A/edit?usp=sharing"
 
-# Conexión a Google Sheets
-conn = st.connection("gsheets", type=GSheetsConnection)
+# Conexión directa con gspread
+@st.cache_resource
+def get_sheet():
+    gc = gspread.public_connector()
+    return gc.open_by_url(SHEET_URL).sheet1
 
 def get_data():
     try:
-        df = conn.read(spreadsheet=SHEET_URL, ttl=0)
-        return df.dropna(how="all")
+        sheet = get_sheet()
+        data = sheet.get_all_records()
+        return pd.DataFrame(data)
     except Exception:
-        return pd.DataFrame(columns=["ID", "Nombre", "Empresa", "Especialidad", "Tecnologias", "Pais", "Palabras_Clave"])
+        # Alternativa de lectura directa si la hoja pública no tiene formato JSON
+        csv_url = SHEET_URL.replace("/edit?usp=sharing", "/export?format=csv")
+        return pd.read_csv(csv_url)
 
 def save_data(df):
-    conn.update(spreadsheet=SHEET_URL, data=df)
+    sheet = get_sheet()
+    sheet.clear()
+    sheet.update([df.columns.values.tolist()] + df.values.tolist())
     st.cache_data.clear()
 
-# Navegación entre pestañas
 tab1, tab2 = st.tabs(["🔍 Buscar y Editar", "➕ Agregar Miembro"])
 
 df = get_data()

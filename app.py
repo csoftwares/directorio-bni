@@ -1,31 +1,30 @@
 import streamlit as st
-from streamlit_gsheets import GSheetsConnection
 import pandas as pd
+import requests
 
 st.set_page_config(page_title="Directorio BNI", page_icon="📇", layout="centered")
 
 st.title("📇 Directorio BNI")
 
-SHEET_URL = "https://docs.google.com/spreadsheets/d/15SjZZq4urwMP8eH8q44JnjyVNRKR_DThF0bN9FWHs1A/edit?usp=sharing"
-
-# Conexión nativa de Streamlit a Google Sheets
-conn = st.connection("gsheets", type=GSheetsConnection)
+# URL de la API de Google Apps Script recién creada
+API_URL = "https://script.google.com/macros/s/AKfycby8VODPUFgD1ignbPwmRzWX6N1wdq4U_B1OZz3n4ABYLATmv6c6PfEOfBip4y5U-cp5nQ/exec"
 
 def get_data():
     try:
-        df = conn.read(spreadsheet=SHEET_URL, ttl=0)
-        df = df.dropna(how="all")
-        # Asegurar columnas obligatorias
-        expected_cols = ["ID", "Nombre", "Empresa", "Especialidad", "Telefono", "Email", "Tecnologias", "Pais", "Palabras_Clave"]
-        for col in expected_cols:
-            if col not in df.columns:
-                df[col] = ""
-        return df
+        response = requests.get(API_URL)
+        data = response.json()
+        if len(data) > 1:
+            df = pd.DataFrame(data[1:], columns=data[0])
+            return df.dropna(how="all")
+        elif len(data) == 1:
+            return pd.DataFrame(columns=data[0])
     except Exception:
-        return pd.DataFrame(columns=["ID", "Nombre", "Empresa", "Especialidad", "Telefono", "Email", "Tecnologias", "Pais", "Palabras_Clave"])
+        pass
+    return pd.DataFrame(columns=["ID", "Nombre", "Empresa", "Especialidad", "Telefono", "Email", "Tecnologias", "Pais", "Palabras_Clave"])
 
 def save_data(df):
-    conn.update(spreadsheet=SHEET_URL, data=df)
+    data_to_send = [df.columns.tolist()] + df.values.tolist()
+    requests.post(API_URL, json=data_to_send)
     st.cache_data.clear()
 
 tab1, tab2 = st.tabs(["🔍 Buscar y Editar", "➕ Agregar Miembro"])
@@ -33,7 +32,7 @@ tab1, tab2 = st.tabs(["🔍 Buscar y Editar", "➕ Agregar Miembro"])
 df = get_data()
 
 with tab1:
-    search_term = st.text_input("Buscar por palabra clave, especialidad, teléfono, email, tecnología o país:", placeholder="Ej: Fortinet, Veeam, +57..., correo@...)")
+    search_term = st.text_input("Buscar por palabra clave, especialidad, teléfono, email, tecnología o país:", placeholder="Ej: Fortinet, Veeam, +57..., correo@...")
     
     if not df.empty:
         if search_term:
@@ -89,7 +88,12 @@ with tab2:
         
         if st.form_submit_button("Guardar Miembro"):
             if n_nombre.strip():
-                new_id = int(df["ID"].max() + 1) if not df.empty and "ID" in df.columns and pd.notna(df["ID"].max()) else 1
+                try:
+                    max_id = pd.to_numeric(df["ID"], errors="coerce").max()
+                    new_id = int(max_id + 1) if pd.notna(max_id) else 1
+                except Exception:
+                    new_id = 1
+                    
                 new_row = pd.DataFrame([{
                     "ID": new_id,
                     "Nombre": n_nombre,
